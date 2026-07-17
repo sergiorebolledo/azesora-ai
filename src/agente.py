@@ -1,6 +1,12 @@
 import os
+import sys
 import time
 from dotenv import load_dotenv
+
+# La consola de Windows no usa UTF-8 por defecto y rompe al hacer print() de emojis;
+# forzamos la codificación de salida para que los logs con emoji no crasheen el proceso.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 # Forzamos a Python a buscar el archivo .env un nivel arriba de la carpeta 'src'
 ruta_env = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
@@ -66,7 +72,10 @@ def consultar_azesora(pregunta, historial_mensajes=None, filtro_pais=None, modo_
         "Eres Azesora AI, un asesor financiero experto especializado en inversiones internacionales y regulaciones locales.\n"
         "Responde de forma clara utilizando ÚNICAMENTE el contexto provisto abajo. Si la respuesta incluye datos numéricos, "
         "estructuras comparativas o rentabilidades, preséntalas en tablas limpias de Markdown para facilitar su lectura.\n"
-        "Si el contexto no contiene la información, di estrictamente que no posees los registros institucionales. No inventes nada.\n\n"
+        "Si el contexto no contiene la información que responde la pregunta, di estrictamente que no posees los registros "
+        "institucionales para ese tema y detente ahí. NUNCA completes la respuesta con conocimiento general propio, "
+        "estimaciones, cifras aproximadas o ejemplos inventados como si fueran datos reales, incluso si el contexto habla de "
+        "un tema relacionado pero distinto. No inventes nada.\n\n"
         f"{instrucciones_modo}\n\n"
         "CONTEXTO DE CONOCIMIENTO:\n"
         f"{contexto}"
@@ -87,18 +96,25 @@ def consultar_azesora(pregunta, historial_mensajes=None, filtro_pais=None, modo_
     
     prompt_template = ChatPromptTemplate.from_messages(mensajes_langchain)
     
-    # 8. Ejecutar la cadena (Prompt + LLM), con Fallback automático a Groq si Gemini falla por cuota o autenticación
+    # 8. Ejecutar la cadena (Prompt + LLM), con Fallback automático a Groq si Gemini falla por cuota, autenticación o servicio
     try:
         cadena_rag = prompt_template | llm
         respuesta_ia = cadena_rag.invoke({"pregunta": pregunta})
+        motor_usado = "Gemini 2.5 Flash"
         print("🧠 Respuesta generada con Gemini (gemini-2.5-flash).")
     except Exception as e:
         error_texto = str(e)
         es_error_cuota = "RESOURCE_EXHAUSTED" in error_texto or "429" in error_texto
         es_error_auth = "UNAUTHENTICATED" in error_texto or "401" in error_texto
+        es_error_servicio = "UNAVAILABLE" in error_texto or "503" in error_texto or "INTERNAL" in error_texto or "500" in error_texto
 
-        if es_error_cuota or es_error_auth:
-            motivo = "cuota agotada" if es_error_cuota else "fallo de autenticación"
+        if es_error_cuota or es_error_auth or es_error_servicio:
+            if es_error_cuota:
+                motivo = "cuota agotada"
+            elif es_error_auth:
+                motivo = "fallo de autenticación"
+            else:
+                motivo = "servicio no disponible"
             print(f"⚠️ Gemini no disponible ({motivo}). Saltando al respaldo Groq (Llama 3.1)...")
             llm_respaldo = ChatGroq(
                 model="llama-3.1-8b-instant",
@@ -107,6 +123,7 @@ def consultar_azesora(pregunta, historial_mensajes=None, filtro_pais=None, modo_
             )
             cadena_rag = prompt_template | llm_respaldo
             respuesta_ia = cadena_rag.invoke({"pregunta": pregunta})
+            motor_usado = "Groq Llama 3.1 8B (respaldo)"
             print("🧠 Respuesta generada con Groq (llama-3.1-8b-instant) como respaldo.")
         else:
             raise
@@ -118,7 +135,8 @@ def consultar_azesora(pregunta, historial_mensajes=None, filtro_pais=None, modo_
     return {
         "respuesta": respuesta_ia.content,
         "fuentes": list(fuentes),
-        "tiempo": tiempo_ejecucion
+        "tiempo": tiempo_ejecucion,
+        "modelo": motor_usado
     }
 
 if __name__ == "__main__":

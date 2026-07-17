@@ -121,7 +121,7 @@ with st.sidebar:
     
     st.markdown("### ⚙️ Panel Técnico (Dev)")
     st.markdown('<div class="sidebar-metric">🟢 <b>Base de Datos:</b> Conectada (ChromaDB)</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-metric">🧠 <b>Modelo:</b> Gemini 2.5 Flash</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-metric">🧠 <b>Modelo principal:</b> Gemini 2.5 Flash (respaldo: Groq Llama 3.1)</div>', unsafe_allow_html=True)
 
 # --- PANEL PRINCIPAL ---
 st.markdown('<div class="brand-title">🌐 Azesora AI</div>', unsafe_allow_html=True)
@@ -137,7 +137,8 @@ for msg in st.session_state.mensajes:
             st.markdown(msg["content"])
             
         if "tiempo" in msg:
-            st.markdown(f'<div class="metadata-caption">⏱️ <b>Tiempo de respuesta:</b> {msg["tiempo"]}s | 🧠 <b>Modelo:</b> Gemini 2.5 Flash</div>', unsafe_allow_html=True)
+            modelo_usado = msg.get("modelo", "Gemini 2.5 Flash")
+            st.markdown(f'<div class="metadata-caption">⏱️ <b>Tiempo de respuesta:</b> {msg["tiempo"]}s | 🧠 <b>Modelo:</b> {modelo_usado}</div>', unsafe_allow_html=True)
             
         if msg.get("fuentes"):
             st.markdown('<div class="source-container" style="margin-top: -5px; margin-bottom: 10px;">', unsafe_allow_html=True)
@@ -194,10 +195,11 @@ if enviar and nueva_pregunta:
             resultado = consultar_azesora(nueva_pregunta, historial_mensajes=historial_previo, filtro_pais=pais_enviar, modo_experto=modo_experto)
             
             st.session_state.mensajes.append({
-                "role": "agent", 
+                "role": "agent",
                 "content": resultado["respuesta"],
                 "fuentes": resultado["fuentes"],
-                "tiempo": resultado["tiempo"]
+                "tiempo": resultado["tiempo"],
+                "modelo": resultado["modelo"]
             })
             st.rerun()
         except Exception as e:
