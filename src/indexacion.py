@@ -8,7 +8,13 @@ if hasattr(sys.stdout, "reconfigure"):
 from langchain_huggingface import HuggingFaceEmbeddings
 # Cambiamos langchain_community por langchain_chroma:
 from langchain_chroma import Chroma
-from ingesta import procesar_archivos_corporativos
+
+try:
+    # Cuando se importa como parte del paquete src (ej. desde app.py o mantencion.py)
+    from .ingesta import procesar_archivos_corporativos
+except ImportError:
+    # Cuando se ejecuta directamente: python src/indexacion.py
+    from ingesta import procesar_archivos_corporativos
 
 def inicializar_base_vectorial():
     print("🧠 Inicializando el modelo de Embeddings (All-MiniLM-L6-v2)...")

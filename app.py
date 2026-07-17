@@ -6,7 +6,9 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from src.agente import consultar_azesora
+from src.agente import consultar_azesora, registrar_feedback
+from src.ingesta import extraer_texto_docx, extraer_texto_pptx, extraer_texto_html, extraer_registros_json
+from src.mantencion import sincronizar_documentos
 
 # Configuración premium de la página
 st.set_page_config(
@@ -16,6 +18,14 @@ st.set_page_config(
 )
 
 # --- CACHÉ AVANZADO PARA OPTIMIZAR RENDIMIENTO (Evita demoras de recarga) ---
+@st.cache_resource
+def sincronizar_documentos_al_iniciar():
+    # Se ejecuta una sola vez por proceso del servidor (no en cada clic): detecta si data_source/
+    # cambió desde la última vez y reindexa automáticamente antes de servir la primera consulta.
+    return sincronizar_documentos()
+
+sincronizar_documentos_al_iniciar()
+
 @st.cache_resource
 def obtener_modelo_embeddings():
     return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
@@ -68,7 +78,10 @@ with st.sidebar:
     st.divider()
     
     st.markdown("### 📥 Indexar Nueva Documentación")
-    archivo_subido = st.file_uploader("Sube un PDF, Markdown o CSV corporativo:", type=["pdf", "md", "csv"])
+    archivo_subido = st.file_uploader(
+        "Sube un documento corporativo (PDF, Word, Excel, PowerPoint, Markdown, CSV, JSON o HTML):",
+        type=["pdf", "md", "csv", "docx", "xlsx", "pptx", "json", "html", "htm"]
+    )
     
     if archivo_subido is not None:
         if st.button("🚀 Indexar en Base de Datos"):
@@ -96,7 +109,42 @@ with st.sidebar:
                         for _, fila in df.iterrows():
                             texto_fila = " ".join([f"{col}: {val}." for col, val in fila.items()])
                             documentos_nuevos.append(Document(page_content=texto_fila, metadata={"pais": "global", "fuente": nombre_archivo}))
-                    
+
+                    elif nombre_archivo.endswith(".docx"):
+                        texto = extraer_texto_docx(archivo_subido)
+                        chunks = text_splitter.split_text(texto)
+                        for c in chunks:
+                            documentos_nuevos.append(Document(page_content=c, metadata={"pais": "global", "fuente": nombre_archivo}))
+
+                    elif nombre_archivo.endswith(".xlsx"):
+                        hojas = pd.read_excel(archivo_subido, sheet_name=None)
+                        for nombre_hoja, df_hoja in hojas.items():
+                            for _, fila in df_hoja.iterrows():
+                                texto_fila = ". ".join(f"{col}: {val}" for col, val in fila.items())
+                                documentos_nuevos.append(Document(page_content=texto_fila, metadata={"pais": "global", "fuente": nombre_archivo, "hoja": nombre_hoja}))
+
+                    elif nombre_archivo.endswith(".pptx"):
+                        for num_slide, texto_slide in extraer_texto_pptx(archivo_subido):
+                            if not texto_slide.strip():
+                                continue
+                            for c in text_splitter.split_text(texto_slide):
+                                documentos_nuevos.append(Document(page_content=c, metadata={"pais": "global", "fuente": nombre_archivo, "diapositiva": num_slide}))
+
+                    elif nombre_archivo.endswith(".json"):
+                        contenido = extraer_registros_json(archivo_subido.read().decode("utf-8"))
+                        if isinstance(contenido, list):
+                            for texto_registro in contenido:
+                                documentos_nuevos.append(Document(page_content=texto_registro, metadata={"pais": "global", "fuente": nombre_archivo}))
+                        else:
+                            for c in text_splitter.split_text(contenido):
+                                documentos_nuevos.append(Document(page_content=c, metadata={"pais": "global", "fuente": nombre_archivo}))
+
+                    elif nombre_archivo.endswith((".html", ".htm")):
+                        texto = extraer_texto_html(archivo_subido.read().decode("utf-8"))
+                        chunks = text_splitter.split_text(texto)
+                        for c in chunks:
+                            documentos_nuevos.append(Document(page_content=c, metadata={"pais": "global", "fuente": nombre_archivo}))
+
                     if documentos_nuevos:
                         vector_store = conectar_base_vectorial()
                         vector_store.add_documents(documentos_nuevos)
@@ -128,7 +176,7 @@ st.markdown('<div class="brand-title">🌐 Azesora AI</div>', unsafe_allow_html=
 st.markdown('<div class="brand-subtitle">Consultor Inteligente de Inversiones Internacionales y Regulación Local</div>', unsafe_allow_html=True)
 
 # Renderizar mensajes pasados
-for msg in st.session_state.mensajes:
+for idx, msg in enumerate(st.session_state.mensajes):
     if msg["role"] == "user":
         st.markdown(f'<div class="chat-bubble-user"><b>👤 Tú:</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
     else:
@@ -146,19 +194,19 @@ for msg in st.session_state.mensajes:
                 st.markdown(f"<span class='source-badge'>📄 {fuente}</span>", unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        col_acc1, col_acc2, _ = st.columns([1.5, 2, 4])
-        
+        col_acc1, col_acc2, col_acc3, col_acc4, _ = st.columns([1.5, 2, 0.7, 0.7, 3.1])
+
         with col_acc1:
             texto_seguro = msg["content"].replace("\n", " ").replace("`", "\\`").replace('"', '\\"')
             boton_html = f"""
-            <button onclick="navigator.clipboard.writeText(`{texto_seguro}`)" 
-                style="background-color: #ffffff; color: #334155; border: 1px solid #CBD5E1; 
+            <button onclick="navigator.clipboard.writeText(`{texto_seguro}`)"
+                style="background-color: #ffffff; color: #334155; border: 1px solid #CBD5E1;
                 padding: 6px 12px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
                 📋 Copiar Respuesta
             </button>
             """
             st.markdown(boton_html, unsafe_allow_html=True)
-            
+
         with col_acc2:
             texto_descarga = f"--- REPORTE DE CONSULTA - AZESORA AI ---\n\n{msg['content']}\n\nFuentes: {', '.join(msg.get('fuentes', ['Ninguna']))}"
             st.download_button(
@@ -168,7 +216,25 @@ for msg in st.session_state.mensajes:
                 mime="text/plain",
                 key=f"dl_{msg['tiempo']}"
             )
-            
+
+        pregunta_asociada = st.session_state.mensajes[idx - 1]["content"] if idx > 0 else ""
+
+        if msg.get("feedback"):
+            emoji_feedback = "👍" if msg["feedback"] == "positivo" else "👎"
+            with col_acc3:
+                st.markdown(f"<span title='Feedback registrado'>{emoji_feedback}</span>", unsafe_allow_html=True)
+        else:
+            with col_acc3:
+                if st.button("👍", key=f"fb_pos_{idx}"):
+                    msg["feedback"] = "positivo"
+                    registrar_feedback(pregunta_asociada, msg["content"], "positivo")
+                    st.rerun()
+            with col_acc4:
+                if st.button("👎", key=f"fb_neg_{idx}"):
+                    msg["feedback"] = "negativo"
+                    registrar_feedback(pregunta_asociada, msg["content"], "negativo")
+                    st.rerun()
+
         st.markdown("<br>", unsafe_allow_html=True)
         st.divider()
 

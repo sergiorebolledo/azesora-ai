@@ -160,6 +160,9 @@ venv.bak/
 # Azesora AI - base vectorial local (regenerable con src/indexacion.py)
 vector_db/
 
+# Azesora AI - logs de ejecucion local (contienen preguntas y respuestas reales)
+logs/
+
 # Spyder project settings
 .spyderproject
 .spyproject

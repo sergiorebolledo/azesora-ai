@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import pandas as pd
 
 # La consola de Windows no usa UTF-8 por defecto y rompe al hacer print() de emojis
@@ -9,6 +10,60 @@ if hasattr(sys.stdout, "reconfigure"):
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from docx import Document as DocumentWord
+from pptx import Presentation
+from bs4 import BeautifulSoup
+
+EXTENSIONES_GENERICAS = {"docx", "xlsx", "pptx", "json", "html", "htm"}
+
+
+def inferir_pais(ruta):
+    """Infiere el país a partir de la carpeta contenedora (ej. data_source/chile/...)."""
+    partes = os.path.normpath(ruta).replace("\\", "/").split("/")
+    return "chile" if "chile" in partes else "global"
+
+
+def extraer_texto_docx(fuente):
+    """fuente puede ser una ruta de archivo o un objeto tipo archivo (ej. subida de Streamlit)."""
+    doc = DocumentWord(fuente)
+    partes = [p.text for p in doc.paragraphs if p.text.strip()]
+    for tabla in doc.tables:
+        for fila in tabla.rows:
+            texto_fila = " | ".join(celda.text.strip() for celda in fila.cells)
+            if texto_fila.strip(" |"):
+                partes.append(texto_fila)
+    return "\n".join(partes)
+
+
+def extraer_texto_pptx(fuente):
+    """Devuelve una lista de (numero_diapositiva, texto) incluyendo notas del orador."""
+    prs = Presentation(fuente)
+    resultado = []
+    for i, slide in enumerate(prs.slides, start=1):
+        fragmentos = []
+        for shape in slide.shapes:
+            if shape.has_text_frame and shape.text_frame.text.strip():
+                fragmentos.append(shape.text_frame.text)
+        if slide.has_notes_slide and slide.notes_slide.notes_text_frame.text.strip():
+            fragmentos.append(f"[Notas del orador]: {slide.notes_slide.notes_text_frame.text}")
+        resultado.append((i, "\n".join(fragmentos)))
+    return resultado
+
+
+def extraer_texto_html(html_bruto):
+    soup = BeautifulSoup(html_bruto, "html.parser")
+    for etiqueta in soup(["script", "style"]):
+        etiqueta.decompose()
+    return soup.get_text(separator="\n", strip=True)
+
+
+def extraer_registros_json(json_bruto):
+    """Si el JSON es una lista de objetos planos, devuelve una frase por registro.
+    En cualquier otro caso, devuelve el JSON completo como texto para dividir en chunks."""
+    data = json.loads(json_bruto)
+    if isinstance(data, list) and data and all(isinstance(item, dict) for item in data):
+        return [". ".join(f"{clave}: {valor}" for clave, valor in item.items()) for item in data]
+    return json.dumps(data, ensure_ascii=False, indent=2)
 
 def procesar_archivos_corporativos():
     documentos_finales = []
@@ -75,6 +130,62 @@ def procesar_archivos_corporativos():
             )
             documentos_finales.append(doc)
         print(f"✅ CSV Comparativo procesado. Creadas {len(df)} filas indexadas.")
+
+    # 4. PROCESAR FORMATOS ADICIONALES (Word, Excel, PowerPoint, JSON, HTML)
+    # Escaneamos toda la carpeta data_source/ buscando estas extensiones, sin tocar
+    # los archivos ya manejados arriba (PDF/MD/CSV) para no duplicarlos.
+    for carpeta_actual, _, archivos in os.walk("data_source"):
+        for nombre_archivo in sorted(archivos):
+            extension = nombre_archivo.rsplit(".", 1)[-1].lower() if "." in nombre_archivo else ""
+            if extension not in EXTENSIONES_GENERICAS:
+                continue
+
+            ruta = os.path.join(carpeta_actual, nombre_archivo)
+            metadata_base = {"pais": inferir_pais(ruta), "broker": "todos", "fuente": nombre_archivo}
+            nuevos_docs = []
+
+            try:
+                if extension == "docx":
+                    texto = extraer_texto_docx(ruta)
+                    for chunk in text_splitter.split_text(texto):
+                        nuevos_docs.append(Document(page_content=chunk, metadata=dict(metadata_base)))
+
+                elif extension == "xlsx":
+                    hojas = pd.read_excel(ruta, sheet_name=None)
+                    for nombre_hoja, df_hoja in hojas.items():
+                        for _, fila in df_hoja.iterrows():
+                            texto_fila = ". ".join(f"{col}: {val}" for col, val in fila.items())
+                            nuevos_docs.append(Document(page_content=texto_fila, metadata=dict(metadata_base, hoja=nombre_hoja)))
+
+                elif extension == "pptx":
+                    for num_slide, texto_slide in extraer_texto_pptx(ruta):
+                        if not texto_slide.strip():
+                            continue
+                        for chunk in text_splitter.split_text(texto_slide):
+                            nuevos_docs.append(Document(page_content=chunk, metadata=dict(metadata_base, diapositiva=num_slide)))
+
+                elif extension == "json":
+                    with open(ruta, "r", encoding="utf-8") as f:
+                        contenido = extraer_registros_json(f.read())
+                    if isinstance(contenido, list):
+                        for texto_registro in contenido:
+                            nuevos_docs.append(Document(page_content=texto_registro, metadata=dict(metadata_base)))
+                    else:
+                        for chunk in text_splitter.split_text(contenido):
+                            nuevos_docs.append(Document(page_content=chunk, metadata=dict(metadata_base)))
+
+                elif extension in ("html", "htm"):
+                    with open(ruta, "r", encoding="utf-8") as f:
+                        texto = extraer_texto_html(f.read())
+                    for chunk in text_splitter.split_text(texto):
+                        nuevos_docs.append(Document(page_content=chunk, metadata=dict(metadata_base)))
+
+                if nuevos_docs:
+                    documentos_finales.extend(nuevos_docs)
+                    print(f"✅ {nombre_archivo} procesado ({extension.upper()}). Creados {len(nuevos_docs)} fragmentos.")
+
+            except Exception as e:
+                print(f"⚠️ No se pudo procesar {nombre_archivo}: {e}")
 
     print(f"\n🎉 ¡Procesamiento completado! Total de fragmentos listos para embeddings: {len(documentos_finales)}")
     return documentos_finales
