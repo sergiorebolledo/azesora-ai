@@ -157,6 +157,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Azesora AI - base vectorial local (regenerable con src/indexacion.py)
+vector_db/
+
 # Spyder project settings
 .spyderproject
 .spyproject

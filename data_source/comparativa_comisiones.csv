@@ -1,0 +1,4 @@
+BROKER,DEPOSITO_MINIMO_USD,COMISION_COMPRA,RETIRO_MINIMO_USD,SOPORTE_ESPANOL
+Zesty,1.0,0.0% (Zero Fee),2.0,Si
+Interactive Brokers,0.0,USD 0.005 por accion,10.0,Si (Limitado)
+Hapi,1.0,USD 0.10 por orden,5.0,Si
