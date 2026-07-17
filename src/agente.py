@@ -42,12 +42,15 @@ def consultar_azesora(pregunta, historial_mensajes=None, filtro_pais=None, modo_
     # 4. Recuperar los fragmentos relevantes para la pregunta
     fragmentos_recuperados = retriever.invoke(pregunta)
     
-    # Ensamblar el contexto y rastrear las fuentes
+    # Ensamblar el contexto y rastrear las fuentes (cada fragmento va etiquetado con su origen exacto)
     contexto = ""
     fuentes = set()
     for doc in fragmentos_recuperados:
-        contexto += doc.page_content + "\n\n"
-        fuentes.add(doc.metadata.get("fuente", "Desconocida"))
+        nombre_fuente = doc.metadata.get("fuente", "Desconocida")
+        pagina = doc.metadata.get("pagina")
+        etiqueta_origen = f"[Fuente: {nombre_fuente}, página {pagina}]" if pagina else f"[Fuente: {nombre_fuente}]"
+        contexto += f"{etiqueta_origen}\n{doc.page_content}\n\n"
+        fuentes.add(nombre_fuente)
         
     # 5. Configurar el LLM
     llm = ChatGoogleGenerativeAI(
@@ -76,6 +79,11 @@ def consultar_azesora(pregunta, historial_mensajes=None, filtro_pais=None, modo_
         "institucionales para ese tema y detente ahí. NUNCA completes la respuesta con conocimiento general propio, "
         "estimaciones, cifras aproximadas o ejemplos inventados como si fueran datos reales, incluso si el contexto habla de "
         "un tema relacionado pero distinto. No inventes nada.\n\n"
+        "Cada fragmento del contexto viene precedido por una etiqueta entre corchetes con su origen exacto, por ejemplo "
+        "'[Fuente: regulacion_impuestos_chile.pdf, página 3]'. Cuando tu respuesta se apoye en un fragmento, es OBLIGATORIO "
+        "citar esa referencia al final de la afirmación correspondiente con el formato exacto: "
+        "'Fuente: [nombre_archivo], página [X]'. Si la etiqueta del fragmento no incluye página (documentos Markdown o CSV), "
+        "cita solo 'Fuente: [nombre_archivo]' sin inventar un número de página.\n\n"
         f"{instrucciones_modo}\n\n"
         "CONTEXTO DE CONOCIMIENTO:\n"
         f"{contexto}"

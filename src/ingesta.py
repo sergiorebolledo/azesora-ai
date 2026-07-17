@@ -1,6 +1,12 @@
 import os
+import sys
 import pandas as pd
-from pypdf import PdfReader
+
+# La consola de Windows no usa UTF-8 por defecto y rompe al hacer print() de emojis
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -20,20 +26,21 @@ def procesar_archivos_corporativos():
     # 1. PROCESAR PDF (Chile)
     pdf_path = "data_source/chile/regulacion_impuestos_chile.pdf"
     if os.path.exists(pdf_path):
-        reader = PdfReader(pdf_path)
-        texto_pdf = ""
-        for i, pagina in enumerate(reader.pages):
-            texto_pdf += pagina.extract_text() + "\n"
-        
-        # Creamos los fragmentos del PDF
-        chunks_pdf = text_splitter.split_text(texto_pdf)
+        # PyMuPDFLoader carga un Document por página, conservando el número de página en la metadata
+        loader = PyMuPDFLoader(pdf_path)
+        paginas_pdf = loader.load()
+
+        # Al dividir sobre los Documents (no sobre texto plano), cada chunk hereda la metadata de su página
+        chunks_pdf = text_splitter.split_documents(paginas_pdf)
         for chunk in chunks_pdf:
-            doc = Document(
-                page_content=chunk,
-                metadata={"pais": "chile", "broker": "todos", "fuente": "regulacion_impuestos_chile.pdf"}
-            )
-            documentos_finales.append(doc)
-        print(f"✅ PDF de Chile procesado. Creados {len(chunks_pdf)} fragmentos.")
+            chunk.metadata.update({
+                "pais": "chile",
+                "broker": "todos",
+                "fuente": "regulacion_impuestos_chile.pdf",
+                "pagina": chunk.metadata.get("page", 0) + 1  # PyMuPDFLoader indexa páginas desde 0
+            })
+            documentos_finales.append(chunk)
+        print(f"✅ PDF de Chile procesado. Creados {len(chunks_pdf)} fragmentos con número de página indexado.")
 
     # 2. PROCESAR MARKDOWN (Global)
     md_path = "data_source/global/interactive_brokers_guide.md"
