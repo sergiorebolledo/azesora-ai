@@ -1,0 +1,22 @@
+# Secretos: nunca deben entrar al contexto de build ni quedar horneados en la imagen
+.env
+.streamlit/secrets.toml
+
+# Entorno local de Windows (no aplica dentro del contenedor Linux)
+.venv/
+
+# Control de versiones y config de herramientas de desarrollo
+.git/
+.gitignore
+.dockerignore
+.claude/
+
+# Datos derivados/regenerables: la app los reconstruye automáticamente al iniciar
+# (ver src/mantencion.py), así que no hace falta empaquetarlos
+vector_db/
+logs/
+
+# Basura de Python
+__pycache__/
+*.pyc
+*.pyo
