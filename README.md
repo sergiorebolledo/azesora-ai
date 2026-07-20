@@ -21,11 +21,13 @@ Azesora AI responde preguntas de colaboradores sobre comisiones de brokers, form
 
 ## 📸 Demo en producción
 
-> _Captura o video del agente corriendo en Oracle Cloud Infrastructure._
->
-> `![Azesora AI en producción](docs/demo-oci.png)`
->
-> Reemplaza esta sección con tu captura de pantalla o un GIF/video corto mostrando una consulta real respondida desde la instancia en la nube.
+**Azesora AI corriendo en la instancia de Oracle Cloud Infrastructure** (`159.112.139.67:8501`), con la pantalla de bienvenida y las preguntas de ejemplo:
+
+![Azesora AI corriendo en OCI](docs/demo-oci-en-vivo.png)
+
+**Consulta real respondida en producción**, citando la página exacta del documento fuente:
+
+![Consulta y respuesta con citas de fuente](docs/demo-consulta-respuesta.png)
 
 ---
 
@@ -46,6 +48,7 @@ Azesora AI responde preguntas de colaboradores sobre comisiones de brokers, form
 - [Mantenimiento y re-indexación](#-mantenimiento-y-re-indexación)
 - [Registro y trazabilidad](#-registro-y-trazabilidad)
 - [Limitaciones conocidas](#-limitaciones-conocidas)
+- [Autor](#-autor)
 
 ---
 
@@ -407,3 +410,11 @@ El feedback del colaborador (👍/👎) se registra en `logs/feedback.jsonl`. Ni
 - El umbral de confianza y el reranker están calibrados empíricamente contra el corpus de demostración; al crecer la base de documentos real, conviene re-calibrar `UMBRAL_RERANK_MINIMO` en `src/agente.py`.
 - La cuota gratuita de Gemini es limitada (~20 consultas/día); el fallback a Groq cubre la mayoría de estos casos, pero ambos son niveles gratuitos con límites propios.
 - En instancias con 1GB de RAM (`E2.1.Micro`), el primer arranque (carga de modelos) puede tardar varios minutos; se recomienda swap y, si el presupuesto lo permite, una instancia con más memoria.
+
+---
+
+## 👤 Autor
+
+**Sergio Rebolledo Lopez**
+
+Proyecto desarrollado como parte del Challenge AluraAgente del programa Oracle Next Education (ONE).
