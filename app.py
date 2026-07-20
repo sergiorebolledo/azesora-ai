@@ -1,12 +1,9 @@
-import os
 import streamlit as st
 import pandas as pd
 from pypdf import PdfReader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
-from src.agente import consultar_azesora, registrar_feedback
+from src.agente import consultar_azesora, registrar_feedback, obtener_vector_store
 from src.ingesta import extraer_texto_docx, extraer_texto_pptx, extraer_texto_html, extraer_registros_json
 from src.mantencion import sincronizar_documentos
 
@@ -25,16 +22,6 @@ def sincronizar_documentos_al_iniciar():
     return sincronizar_documentos()
 
 sincronizar_documentos_al_iniciar()
-
-@st.cache_resource
-def obtener_modelo_embeddings():
-    return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-
-@st.cache_resource
-def conectar_base_vectorial():
-    # Cacheamos la conexión a la base de datos para no leer el disco duro en cada clic
-    embeddings = obtener_modelo_embeddings()
-    return Chroma(persist_directory="vector_db", embedding_function=embeddings)
 
 # --- SISTEMA DE ESTILOS PREMIUM ---
 st.markdown("""
@@ -66,6 +53,14 @@ if "mensajes" not in st.session_state:
     st.session_state.mensajes = []
 if "historial_titulos" not in st.session_state:
     st.session_state.historial_titulos = []
+if "pregunta_pendiente" not in st.session_state:
+    st.session_state.pregunta_pendiente = None
+
+EJEMPLOS_PREGUNTAS = [
+    "¿Cuánto cobra Interactive Brokers por operación?",
+    "¿Qué formulario debo firmar para reducir la retención de impuestos en EE.UU.?",
+    "¿Cuál broker tiene el depósito mínimo más bajo?",
+]
 
 # --- BARRA LATERAL: FILTROS + CARGADOR DE DOCUMENTOS ---
 with st.sidebar:
@@ -74,6 +69,16 @@ with st.sidebar:
 
     modo_respuesta = st.radio("🎓 Modo de Respuesta:", ["Respuesta Simple", "Respuesta Técnica / Experto"])
     modo_experto = modo_respuesta == "Respuesta Técnica / Experto"
+    if modo_experto:
+        st.caption("Respuestas con rigor legal: cita artículos, formularios y normativas específicas.")
+    else:
+        st.caption("Respuestas claras y didácticas, sin jerga legal innecesaria.")
+
+    if st.session_state.mensajes:
+        if st.button("🔄 Nueva conversación", use_container_width=True):
+            st.session_state.mensajes = []
+            st.session_state.historial_titulos = []
+            st.rerun()
 
     st.divider()
     
@@ -146,10 +151,9 @@ with st.sidebar:
                             documentos_nuevos.append(Document(page_content=c, metadata={"pais": "global", "fuente": nombre_archivo}))
 
                     if documentos_nuevos:
-                        vector_store = conectar_base_vectorial()
+                        vector_store = obtener_vector_store()
                         vector_store.add_documents(documentos_nuevos)
                         st.success(f"¡Éxito! {len(documentos_nuevos)} fragmentos indexados desde {nombre_archivo}")
-                        st.cache_resource.clear() # Limpiamos el caché de la BD para que reconozca los nuevos datos de inmediato
                     else:
                         st.error("No se pudo extraer texto del archivo.")
                 except Exception as e:
@@ -175,13 +179,30 @@ with st.sidebar:
 st.markdown('<div class="brand-title">🌐 Azesora AI</div>', unsafe_allow_html=True)
 st.markdown('<div class="brand-subtitle">Consultor Inteligente de Inversiones Internacionales y Regulación Local</div>', unsafe_allow_html=True)
 
+# Estado de bienvenida: solo se muestra antes de la primera consulta de la sesión
+if not st.session_state.mensajes:
+    st.markdown(
+        '<div class="agent-card-container">'
+        '👋 <b>¡Hola! Soy Azesora AI.</b><br>'
+        'Respondo preguntas sobre comisiones de brokers e impuestos de inversión, citando siempre '
+        'la fuente exacta de los documentos oficiales indexados. Prueba con una pregunta o elige un ejemplo:'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    cols_ejemplos = st.columns(len(EJEMPLOS_PREGUNTAS))
+    for col, pregunta_ejemplo in zip(cols_ejemplos, EJEMPLOS_PREGUNTAS):
+        with col:
+            if st.button(pregunta_ejemplo, key=f"ejemplo_{pregunta_ejemplo}", use_container_width=True):
+                st.session_state.pregunta_pendiente = pregunta_ejemplo
+                st.rerun()
+
 # Renderizar mensajes pasados
 for idx, msg in enumerate(st.session_state.mensajes):
     if msg["role"] == "user":
         st.markdown(f'<div class="chat-bubble-user"><b>👤 Tú:</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
     else:
         with st.container():
-            st.markdown(f'<div class="agent-card-container"><b>🤖 Azesora AI:</b></div>', unsafe_allow_html=True)
+            st.markdown('<div class="agent-card-container"><b>🤖 Azesora AI:</b></div>', unsafe_allow_html=True)
             st.markdown(msg["content"])
             
         if "tiempo" in msg:
@@ -246,10 +267,19 @@ with st.form(key="chat_form", clear_on_submit=True):
     with col_btn:
         enviar = st.form_submit_button(label="🔍 Consultar")
 
-# Procesamiento de la nueva petición
-if enviar and nueva_pregunta:
+# Procesamiento de la nueva petición: puede venir del formulario o de un ejemplo clickeado
+if st.session_state.pregunta_pendiente:
+    pregunta_a_procesar = st.session_state.pregunta_pendiente
+    st.session_state.pregunta_pendiente = None
+elif enviar and nueva_pregunta:
+    pregunta_a_procesar = nueva_pregunta
+else:
+    pregunta_a_procesar = None
+
+if pregunta_a_procesar:
+    nueva_pregunta = pregunta_a_procesar
     historial_previo = list(st.session_state.mensajes)
-    
+
     st.session_state.mensajes.append({"role": "user", "content": nueva_pregunta})
     if nueva_pregunta not in st.session_state.historial_titulos:
         titulo_corto = nueva_pregunta if len(nueva_pregunta) <= 30 else nueva_pregunta[:27] + "..."

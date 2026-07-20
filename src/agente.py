@@ -18,7 +18,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage
 
 RUTA_LOGS = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs", "consultas.jsonl")
@@ -56,6 +56,20 @@ def _obtener_reranker():
         from sentence_transformers import CrossEncoder
         _reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
     return _reranker
+
+
+_vector_store = None
+
+
+def obtener_vector_store():
+    """Carga el modelo de embeddings y conecta a ChromaDB una sola vez por proceso (perezoso).
+    Antes esto se repetía en cada consulta, recargando torch/el modelo cada vez -- muy costoso
+    en máquinas con poca RAM/CPU."""
+    global _vector_store
+    if _vector_store is None:
+        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        _vector_store = Chroma(persist_directory="vector_db", embedding_function=embeddings)
+    return _vector_store
 
 
 def _registrar_ejecucion(pregunta, filtro_pais, modo_experto, fragmentos_recuperados, respuesta, motor_usado, tiempo_ejecucion):
@@ -108,13 +122,10 @@ def consultar_azesora(pregunta, historial_mensajes=None, filtro_pais=None, modo_
     historial_mensajes debe ser una lista de dicts: [{"role": "user"/"agent", "content": "..."}]
     """
     inicio = time.time()
-    
-    # 1. Cargar el mismo modelo de embeddings local
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    
-    # 2. Conectar con la base de datos vectorial existente
-    vector_store = Chroma(persist_directory="vector_db", embedding_function=embeddings)
-    
+
+    # 1-2. Modelo de embeddings + conexión a ChromaDB (cacheados, ver obtener_vector_store)
+    vector_store = obtener_vector_store()
+
     # 3. Configurar la búsqueda semántica básica o con filtro de metadatos (País)
     argumentos_busqueda = {"k": CANDIDATOS_RERANKING}
     if filtro_pais:

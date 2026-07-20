@@ -11,9 +11,8 @@
 .dockerignore
 .claude/
 
-# Datos derivados/regenerables: la app los reconstruye automáticamente al iniciar
-# (ver src/mantencion.py), así que no hace falta empaquetarlos
-vector_db/
+# Datos derivados/regenerables: se incluye vector_db/ pre-construido a proposito para evitar
+# reindexar en maquinas con poca RAM/CPU (ver src/mantencion.py, que respeta el manifiesto si coincide)
 logs/
 
 # Basura de Python

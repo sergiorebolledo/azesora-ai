@@ -1,4 +1,3 @@
-import os
 import sys
 
 # La consola de Windows no usa UTF-8 por defecto y rompe al hacer print() de emojis

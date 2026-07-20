@@ -9,6 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Instalamos primero la build CPU-only de torch: el wheel por defecto de PyPI en Linux arrastra
+# ~2.7GB de librerias NVIDIA/CUDA inutiles sin GPU (inflaba la imagen a 3.3GB y volvia lentisimo
+# cualquier build/transferencia en maquinas pequenas). No usamos GPU, asi que no hace falta.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
 COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
