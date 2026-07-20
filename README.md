@@ -12,6 +12,13 @@ Azesora AI responde preguntas de colaboradores sobre comisiones de brokers, form
 
 ---
 
+## 🔗 Demo en vivo
+
+| Entorno | URL | Notas |
+|---|---|---|
+| ☁️ Oracle Cloud Infrastructure | [159.112.139.67:8501](http://159.112.139.67:8501) | Instancia Compute Always Free (`VM.Standard.E2.1.Micro`), 1GB RAM — el primer arranque tras inactividad puede tardar varios minutos. |
+| 🎈 Streamlit Community Cloud | [azesora-ai.streamlit.app](https://azesora-ai.streamlit.app/) | Despliegue gestionado directo desde este repositorio. Si el enlace no responde de inmediato, el contenedor puede estar "dormido" por inactividad — espera unos segundos a que arranque. |
+
 ## 📸 Demo en producción
 
 > _Captura o video del agente corriendo en Oracle Cloud Infrastructure._
@@ -24,6 +31,7 @@ Azesora AI responde preguntas de colaboradores sobre comisiones de brokers, form
 
 ## 📋 Tabla de contenidos
 
+- [Demo en vivo](#-demo-en-vivo)
 - [Descripción del proyecto](#-descripción-del-proyecto)
 - [Características principales](#-características-principales)
 - [Arquitectura](#️-arquitectura)
@@ -33,6 +41,8 @@ Azesora AI responde preguntas de colaboradores sobre comisiones de brokers, form
 - [Cómo agregar o cambiar de proveedor de IA](#-cómo-agregar-o-cambiar-de-proveedor-de-ia)
 - [Despliegue con Docker](#-despliegue-con-docker)
 - [Despliegue en Oracle Cloud Infrastructure (OCI)](#️-despliegue-en-oracle-cloud-infrastructure-oci)
+- [Desplegar tu propio fork en Streamlit Community Cloud](#-desplegar-tu-propio-fork-en-streamlit-community-cloud)
+- [Contribuir](#-contribuir)
 - [Mantenimiento y re-indexación](#-mantenimiento-y-re-indexación)
 - [Registro y trazabilidad](#-registro-y-trazabilidad)
 - [Limitaciones conocidas](#-limitaciones-conocidas)
@@ -326,6 +336,39 @@ docker run -d --name azesora-app --restart unless-stopped \
 ```
 
 Verifica con `curl http://localhost:8501/_stcore/health` (debe responder `200`) y abre `http://<IP_PUBLICA>:8501` desde tu navegador.
+
+---
+
+## 🎈 Desplegar tu propio fork en Streamlit Community Cloud
+
+Es la forma más rápida de tener una copia propia en línea, sin manejar servidores — ideal para probar cambios o compartir tu versión.
+
+1. **Haz un fork** de este repositorio a tu propia cuenta de GitHub (botón "Fork" arriba a la derecha en GitHub).
+2. Entra a [share.streamlit.io](https://share.streamlit.io/) e inicia sesión con tu cuenta de GitHub.
+3. Haz clic en **"New app"** y selecciona tu fork, la rama `main` y el archivo principal `app.py`.
+4. Antes de desplegar, abre **"Advanced settings" → Secrets** y pega tus claves en formato TOML (Streamlit Cloud no usa `.env`, usa este mecanismo de *Secrets* en su lugar):
+   ```toml
+   GOOGLE_API_KEY = "AIzaSy..."
+   GROQ_API_KEY = "gsk_..."
+   ```
+5. Haz clic en **"Deploy"**. La primera carga tarda unos minutos (instala dependencias y construye el índice vectorial desde `data_source/`).
+
+> ⚠️ **Nota sobre `.env` vs Secrets**: como `python-dotenv` solo lee `.env` cuando existe, y Streamlit Cloud inyecta los *Secrets* como variables de entorno del proceso, `os.getenv("GOOGLE_API_KEY")` en `src/agente.py` los detecta igual sin ningún cambio de código — no necesitas tocar nada más.
+
+> ⚠️ **Nota sobre los logs en Streamlit Cloud**: esa plataforma no da acceso al sistema de archivos del contenedor, así que `logs/consultas.jsonl` (que si es visible al correr localmente o en tu propia VM) **no se puede abrir ni descargar ahí**. Lo único visible es la consola de "Manage app → Logs", que muestra la salida estándar (`print(...)`) — por eso `src/agente.py` también imprime un resumen de cada consulta (motor usado, si hubo fallback, etc.) además de escribir el archivo. Ten en cuenta además que el contenedor de Streamlit Cloud es efímero: cada redeploy o reinicio por inactividad borra los archivos escritos en disco, incluidos los logs.
+
+---
+
+## 🤝 Contribuir
+
+¿Tienes una mejora, un proveedor de IA distinto que quieras integrar, o un formato de documento adicional que soportar? Los pull requests son bienvenidos:
+
+1. Haz un fork del repositorio.
+2. Crea una rama descriptiva: `git checkout -b mejora/nombre-de-tu-cambio`.
+3. Prueba tus cambios localmente (`streamlit run app.py`) antes de subirlos.
+4. Abre un Pull Request describiendo qué cambia y por qué.
+
+Ideas de mejoras abiertas (ver [Limitaciones conocidas](#-limitaciones-conocidas)): recalibración dinámica del umbral de reranking, soporte para más proveedores de LLM, panel de métricas a partir de `logs/consultas.jsonl`, autenticación básica para despliegues públicos.
 
 ---
 
